@@ -42,7 +42,6 @@ HEADERS = {
     "Accept": "application/vnd.api+json"
 }
 
-
 ## 함수
 
 # 플레이어의 json 파일을 저장하는 함수
@@ -59,29 +58,38 @@ def current_time_utc():
     return datetime.utcnow() + timedelta(hours=UTC_PLUS_HOURS)
 
 
-def is_file_with_case_sensitive_name_exists(directory, filename):
-    with os.scandir(directory) as entries:
-        for entry in entries:
-            if entry.is_file() and entry.name == filename:
-                return True
-    return False
+
+def find_case_insensitive_path(dir_path, target_filename):
+    lowercase_target = target_filename.lower()
+    for filename in os.listdir(dir_path):
+        if filename.lower() == lowercase_target:
+            # print(os.path.join(dir_path, filename))
+            return os.path.join(dir_path, filename)
+    print("경고! 파일이 존재하지 않습니다.")
+    return None
 
 
 #대소문자 구분해야함
 def isCanSavePlayerJson(player_name):
-    if (is_file_with_case_sensitive_name_exists(PLAYER_JSON_DIR , f'{player_name}.json')):
+    
+    if (os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))):
         utc = current_time_utc()
-        with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'), 'r') as f:
+        
+        player_json_path = find_case_insensitive_path(PLAYER_JSON_DIR , f'{player_name}.json')
+
+        with open(player_json_path) as f:
             json_data = json.load(f)
             createdAt_str = json_data['data'][0]['attributes']['createdAt']
             createdAt = datetime.strptime(createdAt_str, '%Y-%m-%dT%H:%M:%SZ')  # Convert string to datetime
         
         if((utc - createdAt).seconds < REFRESH_PLAYER_DATA_CYCLE):
             # print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이내에 갱신되었으므로 갱신할 필요가 없습니다.")
-            return False
+            return False 
         else:
+            # print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이상이므로 갱신할 필요가 있습니다.")
             return True
     else:
+        # print(f"{player_name}의 데이터는 존재하지 않으므로 갱신할 필요가 있습니다.")
         return True
 
 # 플레이어의 json 파일을 저장하는 함수
@@ -92,33 +100,33 @@ def save_player_json(player_name):
         player_matches_url = f"https://api.pubg.com/shards/{PLATFORM}/players?filter[playerNames]={player_name}"
         response = requests.get(player_matches_url, headers=HEADERS)
 
-        #request가 429를 반환하면
-        if(response.status_code == 429):
-            print("WARNING Too many requests")
 
         #response가 200이 아니면
         if(response.status_code != 200):
             print(f"ERROR {response.status_code}")
             return response.status_code
-        
-
 
         
         json_player_data = response.json()
         #만약 data id가 ai로 시작하면
         if(json_player_data['data'][0]['id'].startswith('ai')):
+            json_player_data['data'][0]['attributes']['createdAt'] = utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'), 'w') as outfile:
+                json.dump(json_player_data, outfile, indent=4)
+
             print("100% 봇임")
             return None
-
+        
 
         json_player_data['data'][0]['attributes']['createdAt'] = utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        with open(f"{PLAYER_JSON_DIR}/{player_name}.json", 'w') as outfile:
+        with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'), 'w') as outfile:
             json.dump(json_player_data, outfile, indent=4)
         
         return json_player_data
     else:
-        with open(f"{PLAYER_JSON_DIR}/{player_name}.json") as json_file:
+        with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json')) as json_file:
             json_data = json.load(json_file)
 
         if(json_data['data'][0]['id'].startswith('ai')):
@@ -177,7 +185,7 @@ def get_team_info(name , match_id):
     user_id = name
 
     for included in json_match_data['included']:
-        if included['type'] == 'participant' and included['attributes']['stats']['name'] == user_id:
+        if included['type'] == 'participant' and included['attributes']['stats']['name'].lower() == user_id.lower():
             participant_id = included['id']
             # print(f'Participant ID: {participant_id}')
             for included in json_match_data['included']:
@@ -453,6 +461,8 @@ async def get_team(interaction: discord.Interaction, player_name: str):
 
     await interaction.response.send_message(f'플레이어 {player_name}의 팀원들은 {team_name}입니다.')
 
+
+
     
 
 
@@ -466,7 +476,6 @@ async def on_message(message):
   # In this case, the bot checks if the content of the message is "Hello!" and send a message if it's true.
   if message.content == 'Hello!':
     await message.channel.send("Hello! I'm happy to see you around here.")
-    return
 
   if message.content == 'Good bye!':
     await message.channel.send("Hope to see you soon!")
