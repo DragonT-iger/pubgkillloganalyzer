@@ -58,8 +58,8 @@ def current_time_utc():
     return datetime.utcnow() + timedelta(hours=UTC_PLUS_HOURS)
 
 
-
-def find_case_insensitive_path(dir_path, target_filename):
+# 대소문자 구분없이 파일을 찾는 함수
+def find_case_insensitive_path(dir_path, target_filename): 
     lowercase_target = target_filename.lower()
     for filename in os.listdir(dir_path):
         if filename.lower() == lowercase_target:
@@ -377,7 +377,7 @@ def get_recent_match_time(player_name):
 
 ###########################
 
-# discord 전역변수
+# discord
 
 ###########################
 
