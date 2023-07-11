@@ -28,13 +28,30 @@ PLATFORM = 'kakao' # 플랫폼을 설정하세요. 예: steam, kakao, xbox, psn 
 PLAYER_JSON_DIR = 'player_json' # 플레이어의 json 파일을 저장할 폴더를 지정하세요.
 MATCH_JSON_DIR = 'match_json' # 매치의 json 파일을 저장할 폴더를 지정하세요.
 
+
 USER_ID = 'baboyeji'
 # int
 
 REFRESH_PLAYER_DATA_CYCLE = 1200 # player_data를 새로고침할 주기 (api 요청 횟수를 줄이기 위함)
 
+
+
+
 #float
 UTC_PLUS_HOURS = 0
+
+
+
+# const
+RANDOM_SQUAD = 0
+MERCENARY = 1
+SOMETIMES_SAME_TEAM = 2
+OFTEN_SAME_TEAM = 3
+FIXED_TEAM = 4
+UNKNOWN = -1
+
+MATCH_REPETITIONS = 50
+
 
 # dict
 HEADERS = {
@@ -53,7 +70,6 @@ HEADERS = {
 # 플레이어의 json 파일을 저장할 수 있는지 검사하는 함수
 
 #json 파일이 존재하는지 검사
-
 def current_time_utc():
     return datetime.utcnow() + timedelta(hours=UTC_PLUS_HOURS)
 
@@ -99,6 +115,8 @@ def save_player_json(player_name):
         
         player_matches_url = f"https://api.pubg.com/shards/{PLATFORM}/players?filter[playerNames]={player_name}"
         response = requests.get(player_matches_url, headers=HEADERS)
+
+        print("API 호출 1회")
 
 
         #response가 200이 아니면
@@ -279,26 +297,32 @@ def get_team_recent_count_from_player_name(player_name, n):
 
     
 
-    team_name, _ , _ = get_team_info(player_name, matches[0])
+    team_name0, _ , _ = get_team_info(player_name, matches[0])
 
-    # team_name 에서 user_name 제외함
-    team_name.remove(player_name)
+    team_name1 , _  , _ = get_team_info(player_name, matches[1])
+
+    team_name2 , _ , _ = get_team_info(player_name, matches[2])
+
+    team_name = set(team_name0 + team_name1 + team_name2)
+
+    team_name.discard(player_name)
+
+    team_name = list(team_name)
 
     count_list = {}
 
 
     #count에 시간이 만약 2시간 이상 차이나면 break
     
-    for i in range(len(team_name)):
+    for elements in team_name:
         count = 0
-        for j in range(len(team_name_list)):
-            if team_name[i] in team_name_list[j]:
+        for sublist in team_name_list:
+            if(elements in sublist):
                 count += 1
             else:
                 break
-        count_list[team_name[i]] = count
+        count_list[elements] = count
 
-        
     # print(count_list)
 
     # for team in team_name:
@@ -320,22 +344,29 @@ def get_team_count_from_player_name(player_name, n):
     matches = get_matches_from_player_name(player_name)
     #get team info
 
-    team_name, _ , _ = get_team_info(player_name, matches[0])
+    team_name0, _ , _ = get_team_info(player_name, matches[0])
 
-    # team_name 에서 user_name 제외함
-    team_name.remove(player_name)
+    team_name1 , _  , _ = get_team_info(player_name, matches[1])
 
+    team_name2 , _ , _ = get_team_info(player_name, matches[2])
+
+    team_name = set(team_name0 + team_name1 + team_name2)
+
+    team_name.discard(player_name)
+
+    team_name = list(team_name)
+    
     count_list = {}
 
 
     #count에 시간이 만약 2시간 이상 차이나면 break
     
-    for i in range(len(team_name)):
+    for elements in team_name:
         count = 0
-        for j in range(len(team_name_list)):
-            if team_name[i] in team_name_list[j]:
+        for sublist in team_name_list:
+            if(elements in sublist):
                 count += 1
-        count_list[team_name[i]] = count
+        count_list[elements] = count
 
         
     # print(count_list)
@@ -374,6 +405,66 @@ def get_recent_match_time(player_name):
     now = current_time_utc()
     return now - game_createdAt
 
+def analyze_player(player_name):
+    providedMatchCount = len(get_matches_from_player_name(player_name))
+    targetMatchCount = MATCH_REPETITIONS
+    totalMatch = targetMatchCount if providedMatchCount > targetMatchCount else providedMatchCount
+
+    print("2")
+    
+    # dict 값임
+    consecutivePlaydict = get_team_recent_count_from_player_name(player_name,totalMatch)
+    totalPlaydict = get_team_count_from_player_name(player_name,totalMatch)
+
+    # 만약 두 dict의 key에 대한 value값이 같다면 isMercenary = True
+
+    print("1")
+
+    # 숫자 값
+
+    recent_time = get_recent_match_time(player_name).seconds
+
+    teamcount_in3match = len(consecutivePlaydict)
+
+
+    playingmethod = UNKNOWN # 0은 랜덤 스쿼드, 1은 용병 , 2는 가끔 같은 팀 , 3은 자주 같은 팀, 4는 고정팀
+    low_probability_team = []
+    high_probability_team = []
+
+    print("3")
+
+    flag = True
+    if(teamcount_in3match <= 8):
+        for key, value in totalPlaydict.items():
+            if(value >= totalMatch * 0.8 or (recent_time < 3600 and consecutivePlaydict[key] >= 1 and value >= totalMatch * 0.3)):
+                high_probability_team.append(key)
+                if(value >= totalMatch * 0.9):
+                    playingmethod = FIXED_TEAM
+                elif(value >= totalMatch * 0.8):
+                    playingmethod = OFTEN_SAME_TEAM
+                
+            elif(value >= totalMatch * 0.4 or (recent_time < 3600 and consecutivePlaydict[key] >= 1 )):
+                low_probability_team.append(key)
+                if(playingmethod == UNKNOWN):
+                    if(value >= totalMatch * 0.4):
+                        playingmethod = SOMETIMES_SAME_TEAM
+                    else:
+                        playingmethod = MERCENARY
+            
+    else:
+        flag = False
+
+        for value in consecutivePlaydict.values():
+            if(value >= totalMatch * 0.3):
+                flag = True
+                break
+
+        if(flag == False):
+            playingmethod = RANDOM_SQUAD
+        
+    print("4")
+        
+    return playingmethod, low_probability_team, high_probability_team
 
 ###########################
 
@@ -460,6 +551,43 @@ async def get_team(interaction: discord.Interaction, player_name: str):
     team_name , _ , _ = get_team_info(player_name, matches[0])
 
     await interaction.response.send_message(f'플레이어 {player_name}의 팀원들은 {team_name}입니다.')
+
+
+#analyze_player
+@tree.command(description='플레이어의 플레이 방식을 분석합니다.', guild=discord.Object(f'{SERVER_ID}'))
+@discord.app_commands.describe(player_name='플레이어 이름')
+async def analyze_player_team(interaction: discord.Interaction, player_name: str):
+    playingmethod, low_probability_team, high_probability_team = analyze_player(player_name)
+
+    text1 = ""
+    text2 = ""
+    text3 = ""
+
+    if(playingmethod == RANDOM_SQUAD):
+        text1 = "랜덤 스쿼드"
+    elif(playingmethod == MERCENARY):
+        text1 = "용병"
+    elif(playingmethod == SOMETIMES_SAME_TEAM):
+        text1 = "가끔 같은 팀"
+    elif(playingmethod == OFTEN_SAME_TEAM):
+        text1 = "자주 같은 팀"
+    elif(playingmethod == FIXED_TEAM):
+        text1 = "고정 팀"
+    else:
+        text1 = "알 수 없음"
+    
+    text2 += ", ".join(low_probability_team)
+
+
+    text3 += ", ".join(high_probability_team)
+
+    if(text2 ==""):
+        text2 = "없음"
+    if(text3 ==""):
+        text3 = "없음"
+    await interaction.response.send_message(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + f'낮은 확률로 같이 플레이하는 팀은 {text2}입니다.' + "\n" + f'높은 확률로 같이 플레이하는 팀은 {text3}입니다.')
+
+
 
 
 
