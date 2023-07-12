@@ -33,6 +33,7 @@ USER_ID = 'baboyeji'
 # int
 
 REFRESH_PLAYER_DATA_CYCLE = 1200 # player_data를 새로고침할 주기 (api 요청 횟수를 줄이기 위함)
+REFRESH_UNKNOWN_PLAYER_DATA_CYCLE = 3600
 
 
 
@@ -84,28 +85,80 @@ def find_case_insensitive_path(dir_path, target_filename):
     print("경고! 파일이 존재하지 않습니다.")
     return None
 
+# 경로의 파일 이름의 대소문자를 구별해서 존재하는지 검사하는 함수
+
+def file_exists_case_sensitive(dir_path, target_filename):
+    for filename in os.listdir(dir_path):
+        if filename == target_filename:  # case-sensitive comparison
+            return True
+    return False
+
+def is_file_error(player_name):
+    # json을 exist검사
+    if(not os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))):
+        return True
+
+    path = find_case_insensitive_path(PLAYER_JSON_DIR, f'{player_name}.json')
+    with open(path) as f:
+        json_data = json.load(f)
+        if 'errors' in json_data:
+            return True
+        
+        return False
 
 #대소문자 구분해야함
 def isCanSavePlayerJson(player_name):
     
-    if (os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))):
+    is_exists = os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))
+    is_sensitive_exists = file_exists_case_sensitive(PLAYER_JSON_DIR, f'{player_name}.json')
+
+    is_case_not_sensitive = is_exists and not is_sensitive_exists
+
+    #json파일이 error 파일일 경우 iserror = True
+
+    #open player_json
+        
+
+    if(is_case_not_sensitive):
+        if(is_file_error(player_name)):
+            os.remove(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))
+            print(f"{player_name}의 json파일이 존재하지만 대소문자가 다르고 에러파일이므로 삭제하고 다시 저장합니다.")
+            return True
+    
+    if(os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))):
         utc = current_time_utc()
         
         player_json_path = find_case_insensitive_path(PLAYER_JSON_DIR , f'{player_name}.json')
 
         with open(player_json_path) as f:
             json_data = json.load(f)
+
+
+            if 'errors' in json_data:
+
+                createAt = json_data['errors'][0]['createdAt']
+                createAt = datetime.strptime(createAt, '%Y-%m-%dT%H:%M:%SZ')  # Convert string to datetime
+
+                if((utc - createAt).seconds < REFRESH_UNKNOWN_PLAYER_DATA_CYCLE):
+                    # print(f"{player_name}의 데이터는 {REFRESH_UNKNOWN_PLAYER_DATA_CYCLE}초 이내에 갱신되었으므로 갱신할 필요가 없습니다.")
+                    return False
+                return True
+
+            if(json_data['data'][0]['id'].startswith('ai')):
+                print(f"{player_name}의 데이터는 존재하지만 ai이므로 갱신할 필요가 없습니다.")
+                return False
+
             createdAt_str = json_data['data'][0]['attributes']['createdAt']
             createdAt = datetime.strptime(createdAt_str, '%Y-%m-%dT%H:%M:%SZ')  # Convert string to datetime
         
         if((utc - createdAt).seconds < REFRESH_PLAYER_DATA_CYCLE):
-            # print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이내에 갱신되었으므로 갱신할 필요가 없습니다.")
+            print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이내에 갱신되었으므로 갱신할 필요가 없습니다.")
             return False 
         else:
-            # print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이상이므로 갱신할 필요가 있습니다.")
+            print(f"{player_name}의 데이터는 {REFRESH_PLAYER_DATA_CYCLE}초 이상이므로 갱신할 필요가 있습니다.")
             return True
     else:
-        # print(f"{player_name}의 데이터는 존재하지 않으므로 갱신할 필요가 있습니다.")
+        print(f"{player_name}의 데이터는 존재하지 않으므로 갱신할 필요가 있습니다.")
         return True
 
 # 플레이어의 json 파일을 저장하는 함수
@@ -117,16 +170,34 @@ def save_player_json(player_name):
         response = requests.get(player_matches_url, headers=HEADERS)
 
         print("API 호출 1회")
+        json_player_data = response.json()
+
 
 
         #response가 200이 아니면
         if(response.status_code != 200):
             print(f"ERROR {response.status_code}")
-            return response.status_code
+            
+            if(is_file_error(player_name) == False):
+                # 파일을 load한다
+                with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json')) as f:
+                    json_data = json.load(f)
+                    return json_data
+            else:
+                json_error_data = response.json()
+                json_error_data['errors'][0]['createdAt'] = utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+                with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'), 'w') as outfile:
+                    json.dump(json_error_data, outfile, indent=4)
+                return response.status_code
 
         
-        json_player_data = response.json()
+        
         #만약 data id가 ai로 시작하면
+
+        
+
+
         if(json_player_data['data'][0]['id'].startswith('ai')):
             json_player_data['data'][0]['attributes']['createdAt'] = utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -146,6 +217,19 @@ def save_player_json(player_name):
     else:
         with open(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json')) as json_file:
             json_data = json.load(json_file)
+
+        
+
+        if 'errors' in json_data:
+            
+            error = json_data['errors'][0]['title']
+
+            if(error == "Not Found"):
+                # print("플레이어가 존재하지 않습니다.")
+                return 404
+            elif(error == "Too Many Requests"):
+                # print("API 호출 횟수를 초과하였습니다.")
+                return 429
 
         if(json_data['data'][0]['id'].startswith('ai')):
             print("봇임")
@@ -236,6 +320,8 @@ def get_matches_from_player_name(player_name):
         return None
     if(json_player_data == 404):
         return 404
+    if(json_player_data == 429):
+        return 429
 
     match_id_list = []
     for match in json_player_data['data'][0]['relationships']['matches']['data']:
@@ -256,6 +342,8 @@ def get_recent_team_info_from_player_name(player_name, n):
         return None
     if(json_player_data == 404):
         return 404
+    if(json_player_data == 429):
+        return 429
 
     match_id_list = []
     for match in json_player_data['data'][0]['relationships']['matches']['data']:
@@ -278,6 +366,8 @@ def get_clan_tag_from_player_name(player_name):
         return None
     if(json_player_data == 404):
         return 404
+    if(json_player_data == 429):
+        return 429
 
     clan_tag = json_player_data['data'][0]['attributes']['clanTag']
     return clan_tag
@@ -291,6 +381,8 @@ def get_team_recent_count_from_player_name(player_name, n):
         return None
     if(team_name_list == 404):
         return 404
+    if(team_name_list == 429):
+        return 429
 
     matches = get_matches_from_player_name(player_name)
     #get team info
@@ -340,6 +432,8 @@ def get_team_count_from_player_name(player_name, n):
         return None
     if(team_name_list == 404):
         return 404
+    if(team_name_list == 429):
+        return 429
     
     matches = get_matches_from_player_name(player_name)
     #get team info
@@ -385,6 +479,8 @@ def get_clan_id_from_name(name):
         return None
     if(json_player_data == 404):
         return 404
+    if(json_player_data == 429):
+        return 429
     
     clan_id = json_player_data['data'][0]['attributes']['clanId']
     return clan_id
@@ -397,6 +493,8 @@ def get_recent_match_time(player_name):
         return None
     if(json_player_data == 404):
         return 404
+    if(json_player_data == 429):
+        return 429
 
     recent_match = json_player_data['data'][0]['relationships']['matches']['data'][0]['id']
     json_match_data = load_match_json(recent_match)
@@ -406,11 +504,26 @@ def get_recent_match_time(player_name):
     return now - game_createdAt
 
 def analyze_player(player_name):
-    providedMatchCount = len(get_matches_from_player_name(player_name))
+    matches = get_matches_from_player_name(player_name)
+
+    if(matches == None): # 봇
+        return None
+    if(matches == 404): # 404
+        return 404
+    if(matches == 429): # 429
+        return 429
+    if(len(matches) == 0): # 매치가 없음
+        return 0
+    
+
+    providedMatchCount = len(matches)
+
+
+
     targetMatchCount = MATCH_REPETITIONS
     totalMatch = targetMatchCount if providedMatchCount > targetMatchCount else providedMatchCount
 
-    print("2")
+    
     
     # dict 값임
     consecutivePlaydict = get_team_recent_count_from_player_name(player_name,totalMatch)
@@ -418,7 +531,7 @@ def analyze_player(player_name):
 
     # 만약 두 dict의 key에 대한 value값이 같다면 isMercenary = True
 
-    print("1")
+   
 
     # 숫자 값
 
@@ -431,24 +544,24 @@ def analyze_player(player_name):
     low_probability_team = []
     high_probability_team = []
 
-    print("3")
+  
 
     flag = True
     if(teamcount_in3match <= 8):
         for key, value in totalPlaydict.items():
             if(value >= totalMatch * 0.8 or (recent_time < 3600 and consecutivePlaydict[key] >= 1 and value >= totalMatch * 0.3)):
                 high_probability_team.append(key)
-                if(value >= totalMatch * 0.9):
+                if(value >= totalMatch * 0.8):
                     playingmethod = FIXED_TEAM
-                elif(value >= totalMatch * 0.8):
-                    playingmethod = OFTEN_SAME_TEAM
                 
             elif(value >= totalMatch * 0.4 or (recent_time < 3600 and consecutivePlaydict[key] >= 1 )):
                 low_probability_team.append(key)
                 if(playingmethod == UNKNOWN):
-                    if(value >= totalMatch * 0.4):
+                    if playingmethod < OFTEN_SAME_TEAM and value >= totalMatch * 0.6:
+                        playingmethod = OFTEN_SAME_TEAM
+                    elif playingmethod < SOMETIMES_SAME_TEAM and value >= totalMatch * 0.4:
                         playingmethod = SOMETIMES_SAME_TEAM
-                    else:
+                    elif playingmethod < MERCENARY:
                         playingmethod = MERCENARY
             
     else:
@@ -462,9 +575,14 @@ def analyze_player(player_name):
         if(flag == False):
             playingmethod = RANDOM_SQUAD
         
-    print("4")
+   
         
-    return playingmethod, low_probability_team, high_probability_team
+    return {
+    "playingmethod": playingmethod,
+    "low_probability_team": low_probability_team,
+    "high_probability_team": high_probability_team,
+    }
+
 
 ###########################
 
@@ -557,7 +675,29 @@ async def get_team(interaction: discord.Interaction, player_name: str):
 @tree.command(description='플레이어의 플레이 방식을 분석합니다.', guild=discord.Object(f'{SERVER_ID}'))
 @discord.app_commands.describe(player_name='플레이어 이름')
 async def analyze_player_team(interaction: discord.Interaction, player_name: str):
-    playingmethod, low_probability_team, high_probability_team = analyze_player(player_name)
+
+
+    
+
+    resultdict = analyze_player(player_name)
+
+    if(resultdict == None):
+        await interaction.response.send_message(f'플레이어 {player_name}는 ai입니다.')
+        return
+    if(resultdict == 404):
+        await interaction.response.send_message(f'플레이어 {player_name}을 찾을 수 없습니다.' + "\n" + "플레이어 이름을 정확히 입력해주세요(대소문자 구별).")
+        return
+    if(resultdict == 429):
+        await interaction.response.send_message(f'Too Many Requests 잠시후 다시 시도해주세요.')
+        return
+
+    if(len(resultdict) == 0):
+        await interaction.response.send_message(f'플레이어 {player_name}의 최근 매치가 없습니다.')
+        return
+    
+    playingmethod = resultdict["playingmethod"]
+    low_probability_team = resultdict["low_probability_team"]
+    high_probability_team = resultdict["high_probability_team"]
 
     text1 = ""
     text2 = ""
@@ -576,16 +716,16 @@ async def analyze_player_team(interaction: discord.Interaction, player_name: str
     else:
         text1 = "알 수 없음"
     
-    text2 += ", ".join(low_probability_team)
+    text2 += ", ".join(high_probability_team)
 
 
-    text3 += ", ".join(high_probability_team)
+    text3 += ", ".join(low_probability_team)
 
     if(text2 ==""):
         text2 = "없음"
     if(text3 ==""):
         text3 = "없음"
-    await interaction.response.send_message(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + f'낮은 확률로 같이 플레이하는 팀은 {text2}입니다.' + "\n" + f'높은 확률로 같이 플레이하는 팀은 {text3}입니다.')
+    await interaction.response.send_message(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + f'높은 확률로 같은 팀인 플레이어는 {text2}입니다.' + "\n" + f'낮은 확률로 같은 팀인 플레이어는 {text3}입니다.')
 
 
 
