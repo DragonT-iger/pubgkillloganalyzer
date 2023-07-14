@@ -1,4 +1,4 @@
-import discord
+import discord, asyncio
 from discord import app_commands
 from discord.ext import commands
 from enum import Enum
@@ -124,6 +124,9 @@ def isCanSavePlayerJson(player_name):
             os.remove(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))
             print(f"{player_name}의 json파일이 존재하지만 대소문자가 다르고 에러파일이므로 삭제하고 다시 저장합니다.")
             return True
+        else:
+            print(f"{player_name}의 json파일이 존재하지만 대소문자가 다르므로 저장하지 않습니다.")
+            return False
     
     if(os.path.exists(os.path.join(PLAYER_JSON_DIR, f'{player_name}.json'))):
         utc = current_time_utc()
@@ -395,11 +398,20 @@ def get_team_recent_count_from_player_name(player_name, n):
 
     team_name2 , _ , _ = get_team_info(player_name, matches[2])
 
-    team_name = set(team_name0 + team_name1 + team_name2)
+    team_names = team_name0 + team_name1 + team_name2
 
-    team_name.discard(player_name)
+    name_dict = {}
+    for name in team_names:
+        lower_name = name.lower()
+        if lower_name not in name_dict:
+            name_dict[lower_name] = name
 
-    team_name = list(team_name)
+    # also convert player name to lowercase before discarding
+    player_name_lower = player_name.lower()
+    if player_name_lower in name_dict:
+        del name_dict[player_name_lower]
+
+    team_name = list(name_dict.values())
 
     count_list = {}
 
@@ -444,12 +456,21 @@ def get_team_count_from_player_name(player_name, n):
 
     team_name2 , _ , _ = get_team_info(player_name, matches[2])
 
-    team_name = set(team_name0 + team_name1 + team_name2)
+    team_names = team_name0 + team_name1 + team_name2
 
-    team_name.discard(player_name)
+    name_dict = {}
+    for name in team_names:
+        lower_name = name.lower()
+        if lower_name not in name_dict:
+            name_dict[lower_name] = name
 
-    team_name = list(team_name)
-    
+    # also convert player name to lowercase before discarding
+    player_name_lower = player_name.lower()
+    if player_name_lower in name_dict:
+        del name_dict[player_name_lower]
+
+    team_name = list(name_dict.values())
+
     count_list = {}
 
 
@@ -547,7 +568,7 @@ def analyze_player(player_name):
   
 
     flag = True
-    if(teamcount_in3match <= 8):
+    if(teamcount_in3match <= 7):
         for key, value in totalPlaydict.items():
             if(value >= totalMatch * 0.8 or (recent_time < 3600 and consecutivePlaydict[key] >= 1 and value >= totalMatch * 0.3)):
                 high_probability_team.append(key)
@@ -592,6 +613,7 @@ def analyze_player(player_name):
 
 
 SERVER_ID = 1127695613048389763
+# SERVER_ID = 480315799857528853
 CLIENT_ID = 1127694844207321150
 TOKEN = "MTEyNzY5NDg0NDIwNzMyMTE1MA.G9p00n.d8hSMN-uZ2wuRu0SpwB0VD3yHr30SujOc4Dw_4"
 
@@ -610,7 +632,7 @@ class aclient(discord.Client):
   async def on_ready(self):
     await self.wait_until_ready()
     if not self.synced: #check if slash commands have been synced 
-      await tree.sync(guild = discord.Object(f'{SERVER_ID}')) #guild specific: you can leave sync() blank to make it global. But it can take up to 24 hours, so test it in a specific guild.
+      await tree.sync() #guild specific: you can leave sync() blank to make it global. But it can take up to 24 hours, so test it in a specific guild.
       self.synced = True
     if not self.added:
       self.added = True
@@ -622,77 +644,73 @@ class aclient(discord.Client):
 client = aclient()
 tree = discord.app_commands.CommandTree(client)
 
-@tree.command(description='Respond hello to you.', guild=discord.Object(f'{SERVER_ID}'))
-async def greet(interaction: discord.Interaction):
-  await interaction.response.send_message('Hello!')
+# @tree.command(description='Respond hello to you.', guild=discord.Object(f'{SERVER_ID}'))
+# async def greet(interaction: discord.Interaction):
+#   await interaction.response.send_message('Hello!')
 
 
-@tree.command(description='Respond hello to you and mention yout user.', guild=discord.Object(f'{SERVER_ID}'))
-async def greet_user(interaction: discord.Interaction):
-  user = interaction.user.id
-  await interaction.response.send_message(f'Hello, <@{user}>!')
+# @tree.command(description='Respond hello to you and mention yout user.', guild=discord.Object(f'{SERVER_ID}'))
+# async def greet_user(interaction: discord.Interaction):
+#   user = interaction.user.id
+#   await interaction.response.send_message(f'Hello, <@{user}>!')
 
-GreetingTime = Enum(value='GreetingTime', names=['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'])
+# GreetingTime = Enum(value='GreetingTime', names=['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'])
 
-@tree.command(description='Respond according to the period of the day.', guild=discord.Object(f'{SERVER_ID}'))
-@discord.app_commands.describe(period='Period of the day')
-async def greet_user_time_of_the_day(interaction: discord.Interaction, period: GreetingTime):
-  user = interaction.user.id
-  if period.name == 'MORNING':
-    await interaction.response.send_message(f'Good Morning, <@{user}>!')
-    return
-  if period.name == 'AFTERNOON':
-    await interaction.response.send_message(f'Good Afternoon, <@{user}>!')
-    return
-  if period.name == 'EVENING':
-    await interaction.response.send_message(f'Good Evening, <@{user}>!')
-    return
-  if period.name == 'NIGHT':
-    await interaction.response.send_message(f'Have a good night, <@{user}>!')
-    return
+# @tree.command(description='Respond according to the period of the day.', guild=discord.Object(f'{SERVER_ID}'))
+# @discord.app_commands.describe(period='Period of the day')
+# async def greet_user_time_of_the_day(interaction: discord.Interaction, period: GreetingTime):
+#   user = interaction.user.id
+#   if period.name == 'MORNING':
+#     await interaction.response.send_message(f'Good Morning, <@{user}>!')
+#     return
+#   if period.name == 'AFTERNOON':
+#     await interaction.response.send_message(f'Good Afternoon, <@{user}>!')
+#     return
+#   if period.name == 'EVENING':
+#     await interaction.response.send_message(f'Good Evening, <@{user}>!')
+#     return
+#   if period.name == 'NIGHT':
+#     await interaction.response.send_message(f'Have a good night, <@{user}>!')
+#     return
 
-# 플레이어 이름을 입력하면 플레이어의 가장 최근 팀원들을 반환하는 명령어
-@tree.command(description='팀원들의 이름을 반환합니다.', guild=discord.Object(f'{SERVER_ID}'))
-@discord.app_commands.describe(player_name='플레이어 이름')
-async def get_team(interaction: discord.Interaction, player_name: str):
-    matches = get_matches_from_player_name(player_name)
-    if(matches == None):
-        await interaction.response.send_message(f'플레이어 {player_name}는 ai입니다.')
-        return
-    if(matches == 404):
-        await interaction.response.send_message(f'플레이어 {player_name}을 찾을 수 없습니다.')
-        return
-    if(len(matches) == 0):
-        await interaction.response.send_message(f'플레이어 {player_name}의 최근 매치가 없습니다.')
-        return
+# # 플레이어 이름을 입력하면 플레이어의 가장 최근 팀원들을 반환하는 명령어
+# @tree.command(description='팀원들의 이름을 반환합니다.', guild=discord.Object(f'{SERVER_ID}'))
+# @discord.app_commands.describe(player_name='플레이어 이름')
+# async def get_team(interaction: discord.Interaction, player_name: str):
+#     matches = get_matches_from_player_name(player_name)
+#     if(matches == None):
+#         await interaction.response.send_message(f'플레이어 {player_name}는 ai입니다.')
+#         return
+#     if(matches == 404):
+#         await interaction.response.send_message(f'플레이어 {player_name}을 찾을 수 없습니다.')
+#         return
+#     if(len(matches) == 0):
+#         await interaction.response.send_message(f'플레이어 {player_name}의 최근 매치가 없습니다.')
+#         return
     
-    team_name , _ , _ = get_team_info(player_name, matches[0])
+#     team_name , _ , _ = get_team_info(player_name, matches[0])
 
-    await interaction.response.send_message(f'플레이어 {player_name}의 팀원들은 {team_name}입니다.')
+#     await interaction.response.send_message(f'플레이어 {player_name}의 팀원들은 {team_name}입니다.')
 
 
 #analyze_player
-@tree.command(description='플레이어의 플레이 방식을 분석합니다.', guild=discord.Object(f'{SERVER_ID}'))
+@tree.command(description='플레이어의 플레이 방식을 분석합니다.')
 @discord.app_commands.describe(player_name='플레이어 이름')
 async def analyze_player_team(interaction: discord.Interaction, player_name: str):
 
+    await interaction.response.defer()
 
-    
 
     resultdict = analyze_player(player_name)
 
-    if(resultdict == None):
-        await interaction.response.send_message(f'플레이어 {player_name}는 ai입니다.')
-        return
-    if(resultdict == 404):
-        await interaction.response.send_message(f'플레이어 {player_name}을 찾을 수 없습니다.' + "\n" + "플레이어 이름을 정확히 입력해주세요(대소문자 구별).")
-        return
-    if(resultdict == 429):
-        await interaction.response.send_message(f'Too Many Requests 잠시후 다시 시도해주세요.')
-        return
-
-    if(len(resultdict) == 0):
-        await interaction.response.send_message(f'플레이어 {player_name}의 최근 매치가 없습니다.')
+    if(resultdict in [None, 404, 429, 0]):
+        messages = {
+            None: f'플레이어 {player_name}는 ai입니다.',
+            404: f'플레이어 {player_name}을 찾을 수 없습니다.' + "\n" + "플레이어 이름을 정확히 입력해주세요(대소문자 구별).",
+            429: f'Too Many Requests 잠시후 다시 시도해주세요.',
+            0: f'플레이어 {player_name}의 최근 매치가 없습니다.'
+        }
+        await interaction.followup.send(messages[resultdict])
         return
     
     playingmethod = resultdict["playingmethod"]
@@ -703,35 +721,45 @@ async def analyze_player_team(interaction: discord.Interaction, player_name: str
     text2 = ""
     text3 = ""
 
-    if(playingmethod == RANDOM_SQUAD):
-        text1 = "랜덤 스쿼드"
-    elif(playingmethod == MERCENARY):
-        text1 = "용병"
-    elif(playingmethod == SOMETIMES_SAME_TEAM):
-        text1 = "가끔 같은 팀"
-    elif(playingmethod == OFTEN_SAME_TEAM):
-        text1 = "자주 같은 팀"
-    elif(playingmethod == FIXED_TEAM):
-        text1 = "고정 팀"
-    else:
-        text1 = "알 수 없음"
+    methods = {
+        RANDOM_SQUAD: "랜덤 스쿼드",
+        MERCENARY: "용병",
+        SOMETIMES_SAME_TEAM: "가끔 같은 팀",
+        OFTEN_SAME_TEAM: "자주 같은 팀",
+        FIXED_TEAM: "고정 팀"
+    }
+
+    text1 = methods.get(playingmethod, "알 수 없음")
+    text2 = ", ".join(high_probability_team) if high_probability_team else "알 수 없음"
+    text3 = ", ".join(low_probability_team) if low_probability_team else "알 수 없음"
+
+
+    await interaction.followup.send(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + 
+                                    f'현재 시간 높은 확률로 같은 팀인 플레이어는 {text2}입니다.' + "\n" + 
+                                    f'현재 시간 낮은 확률로 같은 팀인 플레이어는 {text3}입니다.')
     
-    text2 += ", ".join(high_probability_team)
-
-
-    text3 += ", ".join(low_probability_team)
-
-    if(text2 ==""):
-        text2 = "없음"
-    if(text3 ==""):
-        text3 = "없음"
-    await interaction.response.send_message(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + f'높은 확률로 같은 팀인 플레이어는 {text2}입니다.' + "\n" + f'낮은 확률로 같은 팀인 플레이어는 {text3}입니다.')
-
-
-
-
-
+    #help 도움말 및 여러가지 명령어들을 출력하는 명령어
+@tree.command(description='도움말을 출력합니다.')
+async def help(interaction: discord.Interaction):
     
+    text_header = "[1;34;41mPUBGTracker[0m" + "\n" + "명령어 목록" + "\n"
+
+    text_body = "[1;36;41m/analyze_player_team[0m" "\n" + "-플레이어의 최근 매치를 바탕으로 같은 팀일 대략적인 확률을 분석합니다." + "\n만약 대소문자까지 정확하게 입력했는데 없다고 나온다면 그 플레이어는 ai 플레이어 입니다." +  "\n" + "일부분의 ai는 구분하고 경쟁전에서 더 잘 분석되고 스쿼드만 고려했습니다."
+
+    text_footer = "-디스코드 링크: https://discord.gg/4xFy4zHZCn" + "\n"
+
+    await interaction.response.send_message("```ansi\n" + text_header + "\n" + "\n" + text_body+ "\n" + "\n" + text_footer + "```" +"made by " + "<@389952737359560705>")
+
+
+# 최근 메세지 n개를 삭제합니다.
+@tree.command(description='최근 메세지 n개를 삭제합니다.', guild=discord.Object(f'{480315799857528853}'))
+@discord.app_commands.describe(n='삭제할 메세지 개수')
+async def delete_message(interaction: discord.Interaction, n: int):
+    await interaction.channel.purge(limit=n+1)
+
+
+
+
 
 
 @client.event
@@ -756,4 +784,4 @@ client.run(f'{TOKEN}')
 
 # 명령어 get_team(플레이어 이름) : 플레이어의 팀원들을 반환
 
-# https://discord.com/api/oauth2/authorize?CLIENT_ID=1127694844207321150&permissions=8&scope=bot%20applications.commands
+# https://discord.com/api/oauth2/authorize?client_id=1127694844207321150&permissions=8&scope=bot%20applications.commands
