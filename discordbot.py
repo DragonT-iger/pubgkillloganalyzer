@@ -1,4 +1,4 @@
-import discord, asyncio
+import discord
 from discord import app_commands
 from discord.ext import commands
 from enum import Enum
@@ -7,7 +7,9 @@ from enum import Enum
 import requests
 import json
 import os
+import csv
 from datetime import datetime, timedelta
+import pandas as pd
 
 ################################################################################################
 
@@ -22,11 +24,14 @@ from datetime import datetime, timedelta
 # string
 API_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiIxMWRlNGJiMC1mZTFjLTAxM2ItODI3Ny00MmY3ZTdiY2Q3MWIiLCJpc3MiOiJnYW1lbG9ja2VyIiwiaWF0IjoxNjg4NjQyMDEzLCJwdWIiOiJibHVlaG9sZSIsInRpdGxlIjoicHViZyIsImFwcCI6Ii1jYWNmZTRkOS01ZDc0LTQxNGQtYTViNi0xZTFlODA2YjRiMDUifQ.tj5njHUXJvUsR850EFswKj2j36hwbkP-RzhN9YCbqbY' # 여기에 PUBG API 키를 넣으세요.
 PLATFORM = 'kakao' # 플랫폼을 설정하세요. 예: steam, kakao, xbox, psn 등
-
+DEFAULT_PLATFORM = 'kakao'
 
 
 PLAYER_JSON_DIR = 'player_json' # 플레이어의 json 파일을 저장할 폴더를 지정하세요.
 MATCH_JSON_DIR = 'match_json' # 매치의 json 파일을 저장할 폴더를 지정하세요.
+
+REAL_TIME_MATCH_CSV_DIR = 'real_time_match_csv'
+DISCORD_USER_DATA_DIR = 'discord_user_data.csv'
 
 
 USER_ID = 'baboyeji'
@@ -71,6 +76,17 @@ HEADERS = {
 # 플레이어의 json 파일을 저장할 수 있는지 검사하는 함수
 
 #json 파일이 존재하는지 검사
+
+
+def send_error_message(player_name, resultdict):
+    messages = {
+        None: f'```\n플레이어 {player_name}는 ai입니다.```',
+        404: f'```\n플레이어 {player_name}을 찾을 수 없습니다.' + "\n" + "플레이어 이름을 정확히 입력해주세요(대소문자 구별)." + "\n" + "만약 정확히 입력해도 안된다면 ai플레이어 입니다.```",
+        429: f'```\nToo Many Requests 잠시후 다시 시도해주세요.```',
+        0: f'```\n플레이어 {player_name}의 최근 매치가 없습니다.```'
+    }
+    return messages[resultdict]
+
 def current_time_utc():
     return datetime.utcnow() + timedelta(hours=UTC_PLUS_HOURS)
 
@@ -105,6 +121,16 @@ def is_file_error(player_name):
             return True
         
         return False
+    
+
+def get_server_name(discord_user_id):
+    # csv파일을 읽어서 discord_user_id에 해당하는 server_name을 반환
+    with open(DISCORD_USER_DATA_DIR, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if(row[0] == discord_user_id):
+                return row[1]
+    return DEFAULT_PLATFORM
 
 #대소문자 구분해야함
 def isCanSavePlayerJson(player_name):
@@ -275,6 +301,17 @@ def load_match_json(match_id):
         json_data = json.load(json_file)
     return json_data
 
+def save_real_time_game_csv(player_name):
+    # 플레이어의 json 파일을 직접 만들어서 저장하고 리턴한다.   
+    utc = current_time_utc()
+
+
+
+
+
+
+
+
 def get_team_info(name , match_id):
 
     save_match_json(match_id)
@@ -315,7 +352,7 @@ def get_team_info(name , match_id):
     
     return team_name, team_player_id , game_createdAt
 
-def get_matches_from_player_name(player_name):
+def get_real_matches_from_player_name(player_name):
     
     json_player_data = save_player_json(player_name)
 
@@ -328,7 +365,13 @@ def get_matches_from_player_name(player_name):
 
     match_id_list = []
     for match in json_player_data['data'][0]['relationships']['matches']['data']:
-        match_id_list.append(match['id'])
+
+        save_match_json(match['id'])
+        json_match_data = load_match_json(match['id'])
+
+        if json_match_data['data']['attributes']['isCustomMatch'] == False:
+            match_id_list.append(match['id'])
+
     return match_id_list
 
 
@@ -375,6 +418,7 @@ def get_clan_tag_from_player_name(player_name):
     clan_tag = json_player_data['data'][0]['attributes']['clanTag']
     return clan_tag
 
+
 #연속으로 몇 매치동안 "player_name"의 팀원들이 팀이였는지 확인하는 코드
 def get_team_recent_count_from_player_name(player_name, n):
 
@@ -387,7 +431,9 @@ def get_team_recent_count_from_player_name(player_name, n):
     if(team_name_list == 429):
         return 429
 
-    matches = get_matches_from_player_name(player_name)
+    
+
+    matches = get_real_matches_from_player_name(player_name)
     #get team info
 
     
@@ -413,6 +459,8 @@ def get_team_recent_count_from_player_name(player_name, n):
 
     team_name = list(name_dict.values())
 
+    print(team_name)
+
     count_list = {}
 
 
@@ -427,7 +475,7 @@ def get_team_recent_count_from_player_name(player_name, n):
                 break
         count_list[elements] = count
 
-    # print(count_list)
+    print(count_list)
 
     # for team in team_name:
         # print(f"{player_name}의 팀원 {team}와 {count_list[team]}번 연속으로 팀이였습니다.")
@@ -447,7 +495,7 @@ def get_team_count_from_player_name(player_name, n):
     if(team_name_list == 429):
         return 429
     
-    matches = get_matches_from_player_name(player_name)
+    matches = get_real_matches_from_player_name(player_name)
     #get team info
 
     team_name0, _ , _ = get_team_info(player_name, matches[0])
@@ -484,7 +532,7 @@ def get_team_count_from_player_name(player_name, n):
         count_list[elements] = count
 
         
-    # print(count_list)
+    print(count_list)
 
     # for team in team_name:
         # print(f"{player_name}의 팀원 {team}와 {count_list[team]}번 연속으로 팀이였습니다.")
@@ -525,7 +573,7 @@ def get_recent_match_time(player_name):
     return now - game_createdAt
 
 def analyze_player(player_name):
-    matches = get_matches_from_player_name(player_name)
+    matches = get_real_matches_from_player_name(player_name)
 
     if(matches == None): # 봇
         return None
@@ -597,12 +645,42 @@ def analyze_player(player_name):
             playingmethod = RANDOM_SQUAD
         
    
-        
     return {
     "playingmethod": playingmethod,
     "low_probability_team": low_probability_team,
     "high_probability_team": high_probability_team,
     }
+
+
+def real_time_killlogging(kill_time, killer, player_name, death_time, discord_id, total_player = None, team_name1 = None, team_name2 = None, team_name3 = None, isreset = False):
+
+    server= get_server_name(discord_id)
+
+    path = f'{server}/real_time_game/{discord_id}.json'
+
+    if(os.path.isfile(path) == False or isreset == True):
+        with open(path, 'w') as outfile:
+            initial_data = {'data': {'attributes': {}, 'killlog': {}, 'high_probability_team': [], 'low_probability_team': []}}
+            initial_data['data']['attributes'][player_name] = {"kill_time": kill_time , "death_time": death_time}
+            initial_data['data']['attributes']["total_player"] = total_player
+            initial_data['data']['attributes']["team_name"] = [team_name1, team_name2, team_name3]
+            initial_data['data']['attributes']["createdAt"] = current_time_utc().strftime('%Y-%m-%dT%H:%M:%SZ')
+            json.dump(initial_data, outfile , indent = 4)
+    else:
+        with open(path, 'r') as f:
+            json_data = json.load(f)
+            json_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
+        with open(path, 'w') as f:
+            json.dump(json_data, f , indent = 4)
+
+
+    
+
+        
+        
+
+
+
 
 
 ###########################
@@ -644,54 +722,6 @@ class aclient(discord.Client):
 client = aclient()
 tree = discord.app_commands.CommandTree(client)
 
-# @tree.command(description='Respond hello to you.', guild=discord.Object(f'{SERVER_ID}'))
-# async def greet(interaction: discord.Interaction):
-#   await interaction.response.send_message('Hello!')
-
-
-# @tree.command(description='Respond hello to you and mention yout user.', guild=discord.Object(f'{SERVER_ID}'))
-# async def greet_user(interaction: discord.Interaction):
-#   user = interaction.user.id
-#   await interaction.response.send_message(f'Hello, <@{user}>!')
-
-# GreetingTime = Enum(value='GreetingTime', names=['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'])
-
-# @tree.command(description='Respond according to the period of the day.', guild=discord.Object(f'{SERVER_ID}'))
-# @discord.app_commands.describe(period='Period of the day')
-# async def greet_user_time_of_the_day(interaction: discord.Interaction, period: GreetingTime):
-#   user = interaction.user.id
-#   if period.name == 'MORNING':
-#     await interaction.response.send_message(f'Good Morning, <@{user}>!')
-#     return
-#   if period.name == 'AFTERNOON':
-#     await interaction.response.send_message(f'Good Afternoon, <@{user}>!')
-#     return
-#   if period.name == 'EVENING':
-#     await interaction.response.send_message(f'Good Evening, <@{user}>!')
-#     return
-#   if period.name == 'NIGHT':
-#     await interaction.response.send_message(f'Have a good night, <@{user}>!')
-#     return
-
-# # 플레이어 이름을 입력하면 플레이어의 가장 최근 팀원들을 반환하는 명령어
-# @tree.command(description='팀원들의 이름을 반환합니다.', guild=discord.Object(f'{SERVER_ID}'))
-# @discord.app_commands.describe(player_name='플레이어 이름')
-# async def get_team(interaction: discord.Interaction, player_name: str):
-#     matches = get_matches_from_player_name(player_name)
-#     if(matches == None):
-#         await interaction.response.send_message(f'플레이어 {player_name}는 ai입니다.')
-#         return
-#     if(matches == 404):
-#         await interaction.response.send_message(f'플레이어 {player_name}을 찾을 수 없습니다.')
-#         return
-#     if(len(matches) == 0):
-#         await interaction.response.send_message(f'플레이어 {player_name}의 최근 매치가 없습니다.')
-#         return
-    
-#     team_name , _ , _ = get_team_info(player_name, matches[0])
-
-#     await interaction.response.send_message(f'플레이어 {player_name}의 팀원들은 {team_name}입니다.')
-
 
 #analyze_player
 @tree.command(description='플레이어의 플레이 방식을 분석합니다.')
@@ -703,14 +733,11 @@ async def analyze_player_team(interaction: discord.Interaction, player_name: str
 
     resultdict = analyze_player(player_name)
 
-    if(resultdict in [None, 404, 429, 0]):
-        messages = {
-            None: f'플레이어 {player_name}는 ai입니다.',
-            404: f'플레이어 {player_name}을 찾을 수 없습니다.' + "\n" + "플레이어 이름을 정확히 입력해주세요(대소문자 구별).",
-            429: f'Too Many Requests 잠시후 다시 시도해주세요.',
-            0: f'플레이어 {player_name}의 최근 매치가 없습니다.'
-        }
-        await interaction.followup.send(messages[resultdict])
+    
+
+    if resultdict in [None, 404, 429, 0]:
+        error_message = send_error_message(player_name, resultdict)
+        await interaction.followup.send(error_message)
         return
     
     playingmethod = resultdict["playingmethod"]
@@ -734,28 +761,84 @@ async def analyze_player_team(interaction: discord.Interaction, player_name: str
     text3 = ", ".join(low_probability_team) if low_probability_team else "알 수 없음"
 
 
-    await interaction.followup.send(f'플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + 
+    await interaction.followup.send(f'```\n플레이어 {player_name}의 플레이 방식은 {text1}입니다.' + "\n" + 
                                     f'현재 시간 높은 확률로 같은 팀인 플레이어는 {text2}입니다.' + "\n" + 
-                                    f'현재 시간 낮은 확률로 같은 팀인 플레이어는 {text3}입니다.')
+                                    f'현재 시간 낮은 확률로 같은 팀인 플레이어는 {text3}입니다.```')
     
     #help 도움말 및 여러가지 명령어들을 출력하는 명령어
 @tree.command(description='도움말을 출력합니다.')
 async def help(interaction: discord.Interaction):
     
-    text_header = "[1;34;41mPUBGTracker[0m" + "\n" + "명령어 목록" + "\n"
+    text_header = "[1;34;41mPUBGTracker[0m" + "  명령어 목록"
 
-    text_body = "[1;36;41m/analyze_player_team[0m" "\n" + "-플레이어의 최근 매치를 바탕으로 같은 팀일 대략적인 확률을 분석합니다." + "\n만약 대소문자까지 정확하게 입력했는데 없다고 나온다면 그 플레이어는 ai 플레이어 입니다." +  "\n" + "일부분의 ai는 구분하고 경쟁전에서 더 잘 분석되고 스쿼드만 고려했습니다."
+    text_body = ("[1;36m/set_server[0m\n"
+    "-사용자가 이용하는 서버를 설정합니다. 선택 가능한 서버는 steam이나 kakao입니다."
+    "\n\n[1;36m/analyze_player_team[0m\n" 
+    "-플레이어의 최근 팀 플레이 확률을 분석합니다. \nAI 플레이어는 없다고 뜨는 경우도 있습니다.")
+
+
 
     text_footer = "-디스코드 링크: https://discord.gg/4xFy4zHZCn" + "\n"
 
     await interaction.response.send_message("```ansi\n" + text_header + "\n" + "\n" + text_body+ "\n" + "\n" + text_footer + "```" +"made by " + "<@389952737359560705>")
 
 
-# 최근 메세지 n개를 삭제합니다.
-@tree.command(description='최근 메세지 n개를 삭제합니다.', guild=discord.Object(f'{480315799857528853}'))
-@discord.app_commands.describe(n='삭제할 메세지 개수')
-async def delete_message(interaction: discord.Interaction, n: int):
-    await interaction.channel.purge(limit=n+1)
+# kakao /steam 서버 설정
+
+server_name = Enum(value='server_name', names=['kakao', 'steam'])
+
+@tree.command(description='서버를 설정합니다.')
+@discord.app_commands.describe(server='카카오/스팀 서버 이름')
+async def set_server(interaction: discord.Interaction, server: server_name):
+    user = str(interaction.user.id)  # ID를 문자열로 변환
+
+    if os.path.exists(DISCORD_USER_DATA_DIR):
+        df = pd.read_csv(DISCORD_USER_DATA_DIR, dtype={'user': str})  # 'user' column as string
+
+        if user in df['user'].values:  # if user already exists
+            df.loc[df['user'] == user, 'server'] = server.name  # update the 'server' value
+        else:
+            new_df = pd.DataFrame({'user': [user], 'server': [server.name]})
+            df = pd.concat([df, new_df], ignore_index=True)
+
+    else:
+        df = pd.DataFrame({'user': [user], 'server': [server.name]})  # create a new dataframe
+
+    df.to_csv(DISCORD_USER_DATA_DIR, index=False)  # save the dataframe to a CSV file
+
+    await interaction.response.send_message(f'<@{user}>님의 서버를 {server.name}로 설정했습니다!')
+
+
+#real_time_killlog
+@tree.command(description='실시간 킬로그를 기록합니다.')
+async def real_time_killlog(interaction: discord.Interaction, kill_time: int , killer:str, player_name: str , death_time: int = None, total_player: int = None, team_name1: str = None, team_name2:str = None, team_name3:str =None, isreset:bool=False):
+
+    await interaction.response.defer()
+
+    resultdict = analyze_player(player_name)
+
+    if resultdict in [None, 404, 429]:
+        text = send_error_message(player_name, resultdict)
+    else:
+        text = "```정상적으로 기록되었습니다.```"
+
+    if(death_time == None):
+        death_time = -1
+
+    playingmethod = resultdict["playingmethod"]
+    low_probability_team = resultdict["low_probability_team"]
+    high_probability_team = resultdict["high_probability_team"]
+
+    discord_id = str(interaction.user.id)
+
+    real_time_killlogging(kill_time, killer, player_name, death_time, discord_id, total_player, team_name1, team_name2, team_name3, isreset)
+
+    
+
+
+    await interaction.followup.send(f'<@{discord_id}>님의 킬로그를 기록했습니다!' + text)
+    
+
 
 
 
@@ -776,6 +859,7 @@ async def on_message(message):
   if message.content == 'Good bye!':
     await message.channel.send("Hope to see you soon!")
     return
+
 
 
 
