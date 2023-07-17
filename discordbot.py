@@ -651,29 +651,102 @@ def analyze_player(player_name):
     "high_probability_team": high_probability_team,
     }
 
-
 def real_time_killlogging(kill_time, killer, player_name, death_time, discord_id, total_player = None, team_name1 = None, team_name2 = None, team_name3 = None, isreset = False):
 
     server= get_server_name(discord_id)
 
     path = f'{server}/real_time_game/{discord_id}.json'
+    
 
     if(os.path.isfile(path) == False or isreset == True):
+
+        death_dict = analyze_player(player_name)
+        killer_dict = analyze_player(killer)
+
+        
         with open(path, 'w') as outfile:
-            initial_data = {'data': {'attributes': {}, 'killlog': {}, 'high_probability_team': [], 'low_probability_team': []}}
-            initial_data['data']['attributes'][player_name] = {"kill_time": kill_time , "death_time": death_time}
-            initial_data['data']['attributes']["total_player"] = total_player
-            initial_data['data']['attributes']["team_name"] = [team_name1, team_name2, team_name3]
-            initial_data['data']['attributes']["createdAt"] = current_time_utc().strftime('%Y-%m-%dT%H:%M:%SZ')
-            json.dump(initial_data, outfile , indent = 4)
+            initial_data = {'data': {'attributes': {}, 'killlog': {}, 'analysis': {}}}
+            if death_dict in [None, 404, 429, 0]:
+                print(send_error_message(player_name, death_dict))
+                initial_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
+                initial_data['data']['attributes']["total_player"] = total_player
+                initial_data['data']['attributes']["team_name"] = [player_name , team_name1, team_name2, team_name3]
+                initial_data['data']['attributes']["createdAt"] = current_time_utc().strftime('%Y-%m-%dT%H:%M:%SZ')
+                
+            else:
+                playingmethod = death_dict['playingmethod']
+                low_probability_team = death_dict['low_probability_team']
+                high_probability_team = death_dict['high_probability_team']
+
+                initial_data['data']['killlog'][player_name] = {"kill_time": kill_time , "kills": 0 ,"killer": killer, "death_time": death_time , "playingmethod": playingmethod, "low_probability_team": low_probability_team, "high_probability_team": high_probability_team}
+                initial_data['data']['attributes']["total_player"] = total_player
+                initial_data['data']['attributes']["team_name"] = [player_name , team_name1, team_name2, team_name3]
+                initial_data['data']['attributes']["createdAt"] = current_time_utc().strftime('%Y-%m-%dT%H:%M:%SZ')
+                
+            
+            if killer_dict in [None, 404, 429, 0]:
+                print(send_error_message(killer, killer_dict))
+                initial_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
+            else:
+                playingmethod = killer_dict['playingmethod']
+                low_probability_team = killer_dict['low_probability_team']
+                high_probability_team = killer_dict['high_probability_team']
+
+                initial_data['data']['killlog'][killer] = {"kill_time": kill_time , "kills": 1 , "killer": killer, "death_time": death_time , "playingmethod": playingmethod, "low_probability_team": low_probability_team, "high_probability_team": high_probability_team}
+            
+            json.dump(initial_data, outfile, indent=4)
+            
+
+
+
+
     else:
         with open(path, 'r') as f:
+
+
             json_data = json.load(f)
-            json_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
-        with open(path, 'w') as f:
-            json.dump(json_data, f , indent = 4)
+            death_dict = None
+            killer_dict = None
+
+            if(json_data['data']['killlog'][player_name] != None):
+                death_dict = analyze_player(player_name)
+
+            if(json_data['data']['killlog'][killer] != None):
+                killer_dict = analyze_player(killer)
+
+            if death_dict in [None, 404, 429, 0]:
+                print(send_error_message(player_name, death_dict))
+                json_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
+            
+            else:
+                playingmethod = death_dict['playingmethod']
+                low_probability_team = death_dict['low_probability_team']
+                high_probability_team = death_dict['high_probability_team']
 
 
+                json_data['data']['killlog'][player_name] = {"kill_time": kill_time , "killer": killer, "death_time": death_time , "playingmethod": playingmethod, "low_probability_team": low_probability_team, "high_probability_team": high_probability_team}
+                
+
+            if killer_dict in [None, 404, 429, 0]:
+                print(send_error_message(killer, killer_dict))
+                json_data['data']['killlog'][killer] = {"kill_time": kill_time , "killer": killer, "death_time": death_time}
+
+            else:
+                playingmethod = killer_dict['playingmethod']
+                low_probability_team = killer_dict['low_probability_team']
+                high_probability_team = killer_dict['high_probability_team']
+
+
+
+                json_data['data']['killlog'][killer] = {"kill_time": kill_time , "killer": None, "death_time": death_time , "playingmethod": playingmethod, "low_probability_team": low_probability_team, "high_probability_team": high_probability_team}
+            with open(path, 'w') as f:
+                json.dump(json_data, f , indent = 4)
+
+
+
+# 킬로그 유형
+
+# 1. 기절 알수있는거 -> 죽인사람 기절한사람 -> high_probability_team을 제외하고는 다른팀이라고 가정.
     
 
         
@@ -815,28 +888,16 @@ async def real_time_killlog(interaction: discord.Interaction, kill_time: int , k
 
     await interaction.response.defer()
 
-    resultdict = analyze_player(player_name)
-
-    if resultdict in [None, 404, 429]:
-        text = send_error_message(player_name, resultdict)
-    else:
-        text = "```정상적으로 기록되었습니다.```"
-
+    discord_id = str(interaction.user.id)
+        
     if(death_time == None):
         death_time = -1
 
-    playingmethod = resultdict["playingmethod"]
-    low_probability_team = resultdict["low_probability_team"]
-    high_probability_team = resultdict["high_probability_team"]
-
-    discord_id = str(interaction.user.id)
 
     real_time_killlogging(kill_time, killer, player_name, death_time, discord_id, total_player, team_name1, team_name2, team_name3, isreset)
 
-    
 
-
-    await interaction.followup.send(f'<@{discord_id}>님의 킬로그를 기록했습니다!' + text)
+    await interaction.followup.send(f'<@{discord_id}>님의 킬로그를 기록했습니다!')
     
 
 
