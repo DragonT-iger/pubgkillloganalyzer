@@ -35,6 +35,7 @@
    현재 방식
 
 대소문자 구분없이 파일을 찾는 함수
+
 def find_case_insensitive_path(dir_path, target_filename): 
     lowercase_target = target_filename.lower()
     for filename in os.listdir(dir_path):
