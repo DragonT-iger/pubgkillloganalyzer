@@ -808,12 +808,12 @@ def get_recent_json_file(path):
     
 
 
-def get_stats_from_player_name(player_name):
+def get_stats_from_player_name(player_name, game_type):
     server = get_server_name(player_name)
 
     player_json_data = save_player_json(player_name)
 
-    if player_json_data == None:
+    if player_json_data is None:
         return None
     if player_json_data == 404:
         return 404
@@ -824,12 +824,15 @@ def get_stats_from_player_name(player_name):
 
     current_season_id = get_current_season_id()
 
-    path = f"./data/{server}/{player_name}.json"
+    path = f"./data/{server}/{player_name}_{game_type}.json"
 
     stats_json = get_recent_json_file(path)
 
     if stats_json is None:
-        url = f"https://api.pubg.com/shards/{server}/players/{player_id}/seasons/{current_season_id}/ranked"
+        url = f"https://api.pubg.com/shards/{server}/players/{player_id}/seasons/{current_season_id}"
+        if game_type == "ranked":
+            url += "/ranked"
+            
         response = requests.get(url, headers=HEADERS)
 
         print("api 호출 1번")
@@ -842,6 +845,7 @@ def get_stats_from_player_name(player_name):
             json.dump(stats_json, outfile, indent=4)
         
     return stats_json
+
 
 
            
@@ -947,7 +951,7 @@ async def analyzeplayer(interaction: discord.Interaction, player_name: str):
 @tree.command(description='도움말을 출력합니다.')
 async def help(interaction: discord.Interaction):
     
-    text_header = "[1;34;41mPUBGTracker[0m" + "  명령어 목록"
+    text_header = "[1;34;41mPUBGanalyzer[0m" + "  명령어 목록"
 
     text_body = ("[1;36m/set_server[0m\n"
     "-사용자가 이용하는 서버를 설정합니다. 선택 가능한 서버는 steam이나 kakao입니다."
@@ -989,19 +993,6 @@ async def set_server(interaction: discord.Interaction, server: server_name):
     await interaction.response.send_message(f'<@{user}>님의 서버를 {server.name}로 설정했습니다!')
 
 
-#real_time_killlog
-@tree.command(description='실시간 킬로그를 기록합니다.')
-async def real_time_killlog(interaction: discord.Interaction, kill_time: int , killer:str, player_name: str , death_time: int = None, total_player: int = None, team_name1: str = None, team_name2:str = None, team_name3:str =None, isreset:bool=False):
-
-    await interaction.response.defer()
-
-    discord_id = str(interaction.user.id)
-        
-
-    real_time_killlogging(kill_time, killer, player_name, death_time, discord_id, total_player, team_name1, team_name2, team_name3, isreset)
-
-
-    await interaction.followup.send(f'<@{discord_id}>님의 킬로그를 기록했습니다!')
 
 
 #get_season_stats
@@ -1011,7 +1002,7 @@ async def get_stats(interaction: discord.Interaction, player_name: str):
 
     await interaction.response.defer()
 
-    data = get_stats_from_player_name(player_name)
+    data = get_stats_from_player_name(player_name,'normal')
 
     if data == None:
         error_message = send_error_message(player_name, data)
@@ -1116,8 +1107,8 @@ async def on_message(message):
 
 
 
-# client.run(f'{TOKEN}')
-client.run(f'{TEST_TOKEN}')
+client.run(f'{TOKEN}')
+# client.run(f'{TEST_TOKEN}')
 
 # 명령어 get_team(플레이어 이름) : 플레이어의 팀원들을 반환
 
