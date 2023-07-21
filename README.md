@@ -8,7 +8,7 @@
    (몇번 다운받다 보면 100MB가 훌쩍 넘음)
    그러다 보니까 처리하는데 시간도 오래걸림
 
-- 매치를 반복해서 다운로드 받는게 50 이 default인데 지금 사용하고 있는 서버 라즈베리파이4b 4gb 로는 30초씩 걸리는 경우도 있음
+매치를 반복해서 다운로드 받는게 50 이 default인데 지금 사용하고 있는 서버 라즈베리파이4b 4gb 로는 30초씩 걸리는 경우도 있음
 
   원인 1. 파일 입출력을 사용해서 sd카드에 저장하기 때문에 속도가 메인 컴퓨터로 실행했을 때 보다 많이 느려짐
   해결방안-> 일부 빠른 속도가 필요한 데이터는 cache를 이용하면 상당히 빠름
@@ -34,7 +34,7 @@
 
    현재 방식
 
-   # 대소문자 구분없이 파일을 찾는 함수
+대소문자 구분없이 파일을 찾는 함수
 def find_case_insensitive_path(dir_path, target_filename): 
     lowercase_target = target_filename.lower()
     for filename in os.listdir(dir_path):
